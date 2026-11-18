@@ -374,3 +374,52 @@ test("cancel-only ends receipt batch without raw Ctrl+C, including missing sessi
   assert.deepEqual(h.writes, ["one\r"]);
   assert.deepEqual(h.receipts, h.expected({ index: 0 }, { done: true }));
 });
+
+test("SSH chunk pacing preserves Unicode, newlines and one bracket pair, then sends queued Enter", async t => {
+  const h = harness(t);
+  h.session.conn = {};
+  const first = "a".repeat(31) + "😀";
+  const second = "\r" + "汉".repeat(31);
+  const data = "\x1b[200~" + first + second + "tail\x1b[201~";
+  h.send({ data, automated: false, lineDelayMs: 0, pasteRequestId: undefined, pasteChunkDelayMs: 20 });
+  bridge.writeToSession(null, { sessionId: "s", data: "\r" });
+  await flush();
+  assert.deepEqual(h.writes, ["\x1b[200~" + first]);
+  t.mock.timers.tick(19);
+  assert.equal(h.writes.length, 1);
+  t.mock.timers.tick(1);
+  await flush();
+  assert.deepEqual(h.writes, ["\x1b[200~" + first, second]);
+  t.mock.timers.tick(20);
+  await flush();
+  assert.deepEqual(h.writes, ["\x1b[200~" + first, second, "tail\x1b[201~", "\r"]);
+});
+
+test("interrupt closes an in-progress SSH bracketed paste and cancels remaining writes", async t => {
+  const h = harness(t);
+  h.session.conn = {};
+  const first = "a".repeat(32);
+  h.send({
+    data: "\x1b[200~" + first + "tail\x1b[201~",
+    automated: false,
+    lineDelayMs: 0,
+    pasteRequestId: undefined,
+    pasteChunkDelayMs: 50,
+  });
+  bridge.writeToSession(null, { sessionId: "s", data: "\r" });
+  await flush();
+  bridge.interruptSession(null, { sessionId: "s" });
+  t.mock.timers.tick(100);
+  await flush();
+  assert.deepEqual(h.writes, ["\x1b[200~" + first, "\x1b[201~", "\x03"]);
+});
+
+test("SSH window change sends rows, columns, height and width in ssh2 order", t => {
+  const h = harness(t);
+  const windows = [];
+  h.session.stream.setWindow = (...size) => windows.push(size);
+  bridge.resizeSession(null, { sessionId: "s", cols: 132, rows: 42, height: 840, width: 1320 });
+  bridge.resizeSession(null, { sessionId: "s", cols: 132, rows: 40 });
+  bridge.resizeSession(null, { sessionId: "s", cols: 0, rows: 0 });
+  assert.deepEqual(windows, [[42, 132, 840, 1320], [40, 132, 840, 1320]]);
+});

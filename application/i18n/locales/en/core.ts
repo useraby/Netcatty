@@ -711,6 +711,10 @@ Highlight the focused split pane:
   'settings.terminal.behavior.wordSeparators': 'Word separators',
   'settings.terminal.behavior.wordSeparators.desc':
     'Characters treated as word boundaries for double-click selection. Spaces count too; add =, comma, or : for strings like uid=name.',
+  'settings.terminal.behavior.backspaceSendsCtrlH': 'Backspace sends Ctrl+H (legacy devices)',
+  'settings.terminal.behavior.pasteChunkDelay': 'Paste chunk delay',
+  'settings.terminal.behavior.pasteChunkDelay.desc': 'Wait between chunks when sending a long paste over SSH.',
+  'settings.terminal.behavior.pasteChunkDelay.default': '0 ms (default)',
   'settings.terminal.behavior.bracketedPaste': 'Bracketed paste mode',
   'settings.terminal.behavior.bracketedPaste.desc':
     'Wrap pasted text with escape sequences so the shell can distinguish paste from typed input. Disable if you see ^[[200~ artifacts.',

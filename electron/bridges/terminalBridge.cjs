@@ -1595,6 +1595,7 @@ function pauseSshOutputForInterrupt(session, trace) {
 }
 
 function clearPendingAutomatedWrites(session) {
+  session?.pendingChunkPaste?.cancel();
   for (const paste of session?.pendingPasteWrites || []) paste.finish();
   const timers = session?.pendingAutomatedWriteTimers;
   if (!Array.isArray(timers) || timers.length === 0) return;
@@ -1896,6 +1897,7 @@ function writeToSessionWithInterception(
       terminalInputPipelineBarriers.delete(payload.sessionId);
     }
   });
+  return operation;
 }
 
 // Line-mode serial input is buffered in the renderer and only reaches
@@ -1911,9 +1913,82 @@ function notifySessionUserInput(event, payload) {
   }
 }
 
+const PASTE_CHUNK_SIZE = 32;
+const BRACKETED_PASTE_START = "\x1b[200~";
+const BRACKETED_PASTE_END = "\x1b[201~";
+
+function startChunkedPaste(event, payload, session, delayMs) {
+  const bracketed = payload.data.startsWith(BRACKETED_PASTE_START)
+    && payload.data.endsWith(BRACKETED_PASTE_END);
+  const text = bracketed
+    ? payload.data.slice(BRACKETED_PASTE_START.length, -BRACKETED_PASTE_END.length)
+    : payload.data;
+  // Encode each write independently without splitting a Unicode code point.
+  const characters = Array.from(text);
+  if (characters.length <= PASTE_CHUNK_SIZE) return false;
+
+  let offset = 0;
+  let timer;
+  const paste = {
+    active: true,
+    queued: [],
+    finish(index) {
+      if (index === undefined) paste.cancel();
+    },
+    cancel() {
+      paste.active = false;
+      clearTimeout(timer);
+      session.pendingChunkPaste = undefined;
+    },
+    closeBracket() {
+      if (bracketed && offset > 0 && offset < characters.length) {
+        writeToSessionNow(payload, BRACKETED_PASTE_END);
+      }
+    },
+  };
+  session.pendingChunkPaste = paste;
+
+  const sendNext = async () => {
+    if (!paste.active) return;
+    if (sessions.get(payload.sessionId) !== session || session.closed) {
+      paste.cancel();
+      return;
+    }
+    const start = offset;
+    const end = Math.min(start + PASTE_CHUNK_SIZE, characters.length);
+    let chunk = characters.slice(start, end).join("");
+    if (bracketed && start === 0) chunk = BRACKETED_PASTE_START + chunk;
+    if (bracketed && end === characters.length) chunk += BRACKETED_PASTE_END;
+    await writeToSessionWithInterception(payload, chunk, undefined, session, paste, start);
+    if (!paste.active) return;
+    offset = end;
+    if (offset < characters.length) {
+      timer = setTimeout(sendNext, delayMs);
+      return;
+    }
+    paste.cancel();
+    for (const queuedPayload of paste.queued) {
+      if (sessions.get(payload.sessionId) !== session || session.closed) break;
+      writeToSession(event, queuedPayload);
+    }
+  };
+  void sendNext();
+  return true;
+}
+
 function writeToSession(event, payload) {
   const session = sessions.get(payload.sessionId);
   if (!session) return;
+
+  // Keep later keystrokes and pastes from interleaving with a bracketed paste.
+  // An explicit Ctrl+C still takes the normal cancellation path.
+  if (session.pendingChunkPaste) {
+    if (payload.data !== "\x03") {
+      session.pendingChunkPaste.queued.push(payload);
+      return;
+    }
+    session.pendingChunkPaste.closeBracket();
+  }
 
   try {
     reportOpenedSessionActivity?.({ sessionId: payload.sessionId, phase: "touch" });
@@ -1930,6 +2005,11 @@ function writeToSession(event, payload) {
   }
   if (shouldBlockSessionInput(session, payload.data)) {
     createPasteWriteReceipt(session, payload, 1)?.finish();
+    return;
+  }
+  const chunkDelayMs = payload.pasteChunkDelayMs;
+  if (lineDelayMs === 0 && session.conn && session.stream && typeof payload.data === "string"
+    && [10, 20, 50].includes(chunkDelayMs) && startChunkedPaste(event, payload, session, chunkDelayMs)) {
     return;
   }
   const lineChunks = lineDelayMs > 0 ? splitTerminalInputIntoLineWrites(payload.data) : [payload.data];
@@ -1998,6 +2078,7 @@ function drainPendingOutputForInterrupt(sessionId, session, trace) {
 function interruptSession(event, payload) {
   const session = sessions.get(payload.sessionId);
   if (payload.cancelPendingWritesOnly === true) {
+    session?.pendingChunkPaste?.closeBracket();
     clearPendingAutomatedWrites(session);
     return;
   }
@@ -2018,6 +2099,7 @@ function interruptSession(event, payload) {
     session: getSessionSnapshot(session),
   }, trace);
 
+  session.pendingChunkPaste?.closeBracket();
   clearPendingAutomatedWrites(session);
   const shouldDrainOldOutput = shouldArmTerminalInterruptOutputGate(session);
   const pausedForInterrupt = shouldDrainOldOutput
@@ -2234,13 +2316,16 @@ function ackSessionFlow(event, payload) {
  */
 function resizeSession(event, payload) {
   const session = sessions.get(payload.sessionId);
-  if (!session) return;
-  if (Number.isFinite(payload.cols)) session.cols = payload.cols;
-  if (Number.isFinite(payload.rows)) session.rows = payload.rows;
-  
+  if (!session || !Number.isSafeInteger(payload.cols) || payload.cols <= 0
+    || !Number.isSafeInteger(payload.rows) || payload.rows <= 0) return;
+  session.cols = payload.cols;
+  session.rows = payload.rows;
+  if (Number.isSafeInteger(payload.width) && payload.width > 0) session.width = payload.width;
+  if (Number.isSafeInteger(payload.height) && payload.height > 0) session.height = payload.height;
+
   try {
     if (session.stream) {
-      session.stream.setWindow(payload.rows, payload.cols, 0, 0);
+      session.stream.setWindow(session.rows, session.cols, session.height ?? 0, session.width ?? 0);
     } else if (session.proc) {
       session.proc.resize(payload.cols, payload.rows);
     } else if (session.socket && session.type === 'telnet-native') {

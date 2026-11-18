@@ -229,9 +229,9 @@ export const useTerminalBackend = () => {
     if (!options?.cancelPendingWritesOnly) bridge?.writeToSession?.(sessionId, "\x03");
   }, []);
 
-  const resizeSession = useCallback((sessionId: string, cols: number, rows: number) => {
+  const resizeSession = useCallback<NetcattyBridge["resizeSession"]>((sessionId, cols, rows, pixels) => {
     const bridge = netcattyBridge.get();
-    bridge?.resizeSession?.(sessionId, cols, rows);
+    bridge?.resizeSession?.(sessionId, cols, rows, pixels);
   }, []);
 
   const clearSessionPtyBuffer = useCallback((sessionId: string) => {

@@ -6,7 +6,6 @@ import type {
   HostInfoBarTitleMode,
   PasswordPromptAssistMode,
   ProxyProfile,
-  TerminalEmulationType,
   TerminalSettings,
 } from "../../../domain/models";
 import { useI18n } from "../../../application/i18n/I18nProvider";
@@ -28,7 +27,7 @@ import { ThemeSelectModal } from "../ThemeSelectModal";
 import { TerminalFontSelect } from "../TerminalFontSelect";
 import { TerminalCjkFontSelect } from "../TerminalCjkFontSelect";
 import { CustomThemeModal } from "../../terminal/CustomThemeModal";
-import type { TerminalTheme } from "../../../domain/models";
+import { TERMINAL_EMULATION_TYPES, type TerminalTheme } from "../../../domain/models";
 import { resolveFollowedTerminalThemeId, resolveManualTerminalThemeId } from "../../../domain/terminalAppearance";
 
 import { KeywordHighlightRulesEditor, ThemePreviewButton } from "./SettingsTerminalTabControls";
@@ -674,14 +673,11 @@ function SettingsTerminalTab(props: {
         <SettingRow anchorId="terminal-emulation-type" label={t("settings.terminal.font.emulationType")}>
           <Select
             value={terminalSettings.terminalEmulationType}
-            options={[
-              { value: "xterm-256color", label: "xterm-256color" },
-              { value: "xterm-16color", label: "xterm-16color" },
-              { value: "xterm", label: "xterm" },
-            ]}
-            onChange={(v) =>
-              updateTerminalSetting("terminalEmulationType", v as TerminalEmulationType)
-            }
+            options={TERMINAL_EMULATION_TYPES.map((value) => ({ value, label: value }))}
+            onChange={(value) => {
+              const type = TERMINAL_EMULATION_TYPES.find((option) => option === value);
+              if (type) updateTerminalSetting("terminalEmulationType", type);
+            }}
             className="w-44"
           />
         </SettingRow>

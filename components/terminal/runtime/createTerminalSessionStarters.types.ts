@@ -104,7 +104,7 @@ export type TerminalBackendApi = {
   /** Signal buffered user input so main-process auto-login cancels. */
   notifyUserInput?: (sessionId: string) => void;
   interruptSession?: NetcattyBridge["interruptSession"];
-  resizeSession: (sessionId: string, cols: number, rows: number) => void;
+  resizeSession: NetcattyBridge["resizeSession"];
   closeSession: (sessionId: string, options?: { bootEpoch?: number }) => void | Promise<void>;
   /** Pause/resume the source stream for output back-pressure (optional). */
   setSessionFlowPaused?: (sessionId: string, paused: boolean) => void;

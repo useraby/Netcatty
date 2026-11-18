@@ -4,6 +4,7 @@ import type { ProviderValidationIssue } from "@netcatty/plugin-contract";
 import { logger } from "../../../lib/logger";
 import type { Host, Identity, SSHKey } from "../../../types";
 import { type TerminalSessionExitEvent, formatSessionClosedExitMessage } from "../../../application/state/resolveTerminalSessionExitIntent";
+import { getTerminalPixelSize } from "./terminalResizeScheduler";
 import { setTerminalBootEpoch } from "../../../domain/terminalBootEpoch";
 import type { TerminalSessionStartersContext } from "./createTerminalSessionStarters.types";
 export type {
@@ -637,8 +638,6 @@ export const createTerminalSessionStarters = (ctx: TerminalSessionStartersContex
     }
 
     try {
-      const termEnv = buildTermEnv(ctx.host, ctx.terminalSettings);
-
       const authMethod = resolvedAuth.authMethod;
       const allowsLocalIdentityFallback = !resolvedAuth.keyId;
       const targetReferenceKeyPath = key?.source === 'reference' ? key.filePath : undefined;
@@ -698,6 +697,7 @@ export const createTerminalSessionStarters = (ctx: TerminalSessionStartersContex
             // A broken saved credential must not prevent a manual SSH login.
           }
         }
+        const terminalSettings = ctx.terminalSettingsRef?.current ?? ctx.terminalSettings;
         const startedSessionId = await ctx.terminalBackend.startSSHSession({
           sessionId: ctx.sessionId,
           hostLabel: ctx.host.label,
@@ -727,12 +727,14 @@ export const createTerminalSessionStarters = (ctx: TerminalSessionStartersContex
           legacyAlgorithms: ctx.host.legacyAlgorithms,
           skipEcdsaHostKey: ctx.host.skipEcdsaHostKey,
           algorithmOverrides: ctx.host.algorithms,
+          term: terminalSettings?.terminalEmulationType,
           cols: term.cols,
           rows: term.rows,
+          ...getTerminalPixelSize(term),
           charset: ctx.host.charset,
           // Persist for session-backed SFTP opens (AI tools / clipboard paste).
           sftpFileProtocol: ctx.host.sftpFileProtocol || "auto",
-          env: termEnv,
+          env: buildTermEnv(ctx.host, terminalSettings),
           proxy: proxyConfig,
           jumpHosts: jumpHosts.length > 0 ? jumpHosts : undefined,
           keepaliveInterval: keepalive.interval,
@@ -864,6 +866,9 @@ export const createTerminalSessionStarters = (ctx: TerminalSessionStartersContex
         return;
       }
 
+      // The grid may have changed while SSH was authenticating, before onResize
+      // had an attached session to notify.
+      ctx.terminalBackend.resizeSession?.(id, term.cols, term.rows, getTerminalPixelSize(term));
       consumeRestoreCwdIntent(term, id);
       scheduleStartupCommand(ctx, term, id);
 

@@ -711,6 +711,10 @@ Resalta el panel dividido enfocado:
   'settings.terminal.behavior.wordSeparators': 'Separadores de palabras',
   'settings.terminal.behavior.wordSeparators.desc':
     'Caracteres tratados como límites de palabra para la selección con doble clic. Los espacios también cuentan; agrega =, coma o : para cadenas como uid=name.',
+  'settings.terminal.behavior.backspaceSendsCtrlH': 'Retroceso envía Ctrl+H (dispositivos antiguos)',
+  'settings.terminal.behavior.pasteChunkDelay': 'Pausa entre bloques de pegado',
+  'settings.terminal.behavior.pasteChunkDelay.desc': 'Espera entre bloques al enviar un texto largo por SSH.',
+  'settings.terminal.behavior.pasteChunkDelay.default': '0 ms (predeterminado)',
   'settings.terminal.behavior.bracketedPaste': 'Modo de pegado entre corchetes',
   'settings.terminal.behavior.bracketedPaste.desc':
     'Envuelve el texto pegado con secuencias de escape para que el shell pueda distinguir el pegado de la entrada escrita. Desactívalo si ves artefactos ^[[200~.',

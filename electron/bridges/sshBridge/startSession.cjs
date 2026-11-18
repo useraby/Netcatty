@@ -38,6 +38,16 @@ const SSH_AUTH_READY_TIMEOUT_MS = 120000;
 const MAX_SSH_CONNECTION_TIMEOUT_MS = 3600000;
 const COPY_TAB_RATE_LIMIT_RETRY_TIMEOUT_MS = 30000;
 
+function buildInteractivePtyOptions(options, cols, rows) {
+  return {
+    term: typeof options.term === "string" && options.term ? options.term : "xterm-256color",
+    cols,
+    rows,
+    width: options.width ?? 0,
+    height: options.height ?? 0,
+  };
+}
+
 function buildInteractiveShellOptions(options) {
   const shellOptions = {};
   // Hosts with singleChannelSsh (bastion/PAM) may drop the transport on
@@ -430,6 +440,8 @@ function createStartSessionApi(ctx) {
           : null,
         cols: options.cols || 80,
         rows: options.rows || 24,
+        width: options.width ?? 0,
+        height: options.height ?? 0,
       };
       const { claimSessionSlot } = require("../sessionBootEpoch.cjs");
       const claim = claimSessionSlot(sessions, sessionId, session, options.bootEpoch);
@@ -941,11 +953,7 @@ function createStartSessionApi(ctx) {
           const rateLimitBackoffMs = Number(options.sshChannelOpenRateLimitBackoffMs);
           openBoundedSshShellCallback(
             conn,
-            {
-              term: "xterm-256color",
-              cols,
-              rows,
-            },
+            buildInteractivePtyOptions(options, cols, rows),
             shellOptions,
             (err, stream) => {
               cleanupConnectionGuard();
@@ -2507,11 +2515,7 @@ function createStartSessionApi(ctx) {
 
             openBoundedSshShellCallback(
               conn,
-              {
-                term: "xterm-256color",
-                cols,
-                rows,
-              },
+              buildInteractivePtyOptions(options, cols, rows),
               shellOptions,
               (err, stream) => {
                 if (err) {

@@ -99,7 +99,13 @@ declare global {
     publicKey?: string;
   }
 
-  interface NetcattySSHOptions {
+  interface NetcattyTerminalPixelSize {
+    width: number;
+    height: number;
+  }
+
+  interface NetcattySSHOptions extends Partial<NetcattyTerminalPixelSize> {
+    term?: import("./domain/models").TerminalEmulationType;
     keyLabel?: string;
     sessionId?: string;
     hostId?: string;

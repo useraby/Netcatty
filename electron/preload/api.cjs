@@ -369,6 +369,7 @@ function createPreloadApi(ctx) {
       pasteRequestId: typeof options?.pasteRequestId === "string" ? options.pasteRequestId : undefined,
       sensitive: options?.sensitive === true,
       serialEraseChar: typeof options?.serialEraseChar === "string" ? options.serialEraseChar : undefined,
+      pasteChunkDelayMs: options?.pasteChunkDelayMs,
       lineDelayMs: Number.isFinite(lineDelayMs) && lineDelayMs > 0 ? lineDelayMs : undefined,
       logRewrite: options?.logRewrite && typeof options.logRewrite === "object"
         ? {
@@ -519,8 +520,8 @@ function createPreloadApi(ctx) {
   getDefaultKeys: async () => {
     return ipcRenderer.invoke("netcatty:ssh:get-default-keys");
   },
-  resizeSession: (sessionId, cols, rows) => {
-    ipcRenderer.send("netcatty:resize", { sessionId, cols, rows });
+  resizeSession: (sessionId, cols, rows, pixels) => {
+    ipcRenderer.send("netcatty:resize", { sessionId, cols, rows, width: pixels?.width, height: pixels?.height });
   },
   clearSessionPtyBuffer: (sessionId) => {
     if (!sessionId) return;

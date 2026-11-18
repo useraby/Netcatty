@@ -32,6 +32,7 @@ import {
   type CursorPreferenceSnapshot,
 } from './runtime/cursorPreference';
 import { resolveCursorLineHighlightBackground } from '../../domain/cursorLineHighlight';
+import { getTerminalPixelSize } from './runtime/terminalResizeScheduler';
 import { getFlowControllerForTerm } from './runtime/terminalSessionAttachment';
 import {
   prioritizeTerminalInput,
@@ -810,7 +811,7 @@ export function useTerminalEffects(ctx: TerminalEffectsContext) {
                 // ignore
               }
               try {
-                terminalBackend.resizeSession?.(sessionId, term.cols, term.rows);
+                terminalBackend.resizeSession?.(sessionId, term.cols, term.rows, getTerminalPixelSize(term));
               } catch {
                 // ignore
               }
@@ -1275,7 +1276,7 @@ export function useTerminalEffects(ctx: TerminalEffectsContext) {
       if (isTerminalAlternateScreenActive(term)) {
         nudgeAlternateScreenRedraw(term);
       } else {
-        resizeSession(id, term.cols, term.rows);
+        resizeSession(id, term.cols, term.rows, getTerminalPixelSize(term));
       }
     } catch (err) {
       logger.warn('Sync session size after layout failed', err);
@@ -1585,7 +1586,7 @@ export function useTerminalEffects(ctx: TerminalEffectsContext) {
       const id = sessionRef.current;
       if (id) {
         try {
-          resizeSession(id, term.cols, term.rows);
+          resizeSession(id, term.cols, term.rows, visibleTerm ? getTerminalPixelSize(visibleTerm) : undefined);
         } catch (err) {
           logger.warn("Resize session after fonts ready failed", err);
         }

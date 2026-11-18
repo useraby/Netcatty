@@ -80,7 +80,8 @@ function loadBridgeWithMockedSsh2(t, {
       });
       callback(null, stream);
     }
-    shell(_pty, options, callback) {
+    shell(pty, options, callback) {
+      this.lastPtyOptions = pty;
       this.lastShellOptions = options;
       const stream = makeStream();
       this.openedShells.push(stream);
@@ -682,9 +683,11 @@ function makeReusableConn() {
   conn.ended = 0;
   conn.openedShells = [];
   conn.openedShellOptions = [];
+  conn.openedPtyOptions = [];
   conn.end = () => { conn.ended += 1; };
   conn.destroy = () => {};
-  conn.shell = (_opts, shellOpts, cb) => {
+  conn.shell = (pty, shellOpts, cb) => {
+    conn.openedPtyOptions.push(pty);
     const stream = makeStream();
     conn.openedShells.push(stream);
     conn.openedShellOptions.push(shellOpts);
@@ -1934,6 +1937,25 @@ test("concurrent copies keep distinct shell IDs when the source closes immediate
     new Set([sessions.get("copy-1").shellPid, sessions.get("copy-2").shellPid]),
     new Set(["222", "333"]),
   );
+});
+
+test("fresh and reused SSH channels advertise the selected terminal and PTY dimensions", async (t) => {
+  resetSshTransportRegistryForTests({ defaultIdleTtlMs: 0 });
+  t.after(() => resetSshTransportRegistryForTests({ defaultIdleTtlMs: 0 }));
+  const { bridge, getClients } = loadBridgeWithMockedSsh2(t, { connectReady: true });
+  const sessions = new Map();
+  const start = registerStartHandler(bridge, sessions);
+  const sender = makeSender();
+  const endpoint = { hostname: "10.0.0.1", username: "alice" };
+  const freshPty = { term: "vt220", cols: 132, rows: 40, width: 1320, height: 800 };
+  await start({ sender }, { ...endpoint, sessionId: "fresh-pty", ...freshPty });
+  assert.deepEqual(getClients()[0].lastPtyOptions, freshPty);
+
+  const sourceConn = makeReusableConn();
+  sessions.set("source-pty", makeSourceSession(sourceConn, endpoint));
+  const reusedPty = { term: "screen-256color", cols: 96, rows: 28, width: 960, height: 560 };
+  await start({ sender }, { ...endpoint, sessionId: "copy-pty", sourceSessionId: "source-pty", ...reusedPty });
+  assert.deepEqual(sourceConn.openedPtyOptions, [reusedPty]);
 });
 
 test("Copy Tab preserves the server locale unless the host explicitly overrides it", async (t) => {

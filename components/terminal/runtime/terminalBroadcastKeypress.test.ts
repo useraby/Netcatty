@@ -20,16 +20,18 @@ function section(start: string, end: string): string {
 }
 const declarations = section("  let suppressNextTerminalDataBroadcast =", "  const broadcastKittyInput =");
 const keyboardCallback = section("  term.attachCustomKeyEventHandler((e: KeyboardEvent) => {", "  const handleMiddleClick =");
-const dataCallback = section("  term.onData((data) => {", "  const handleKittyKeyboardBroadcast =");
+const dataCallback = section("  const originalPaste = term.paste;", "  const handleKittyKeyboardBroadcast =");
 const compositionMarker = section("  const markKittyCompositionPending =", "  const finishKittyComposition =");
 const textInputMarker = section("  const markKittyTextInput =", '  textarea?.addEventListener("compositionstart"');
 const suppression = section("    const suppressTerminalBroadcast =", "    // skipBroadcast");
 const callbackCode = ts.transpileModule(`
   ${declarations}
+  const usesSshPty = true;
   let win32InputModePendingEvent = null;
   let kittyCompositionPending = false;
   let kittyCompositionClearTimer;
-  const handleTerminalInputData = (data) => {
+  const handleTerminalInputData = (data, options) => {
+    if (options?.pasteChunkDelayMs) onPacedPaste(data, options.pasteChunkDelayMs);
     const inputSource = "terminal";
     ${suppression}
     if (!suppressTerminalBroadcast) raw(data);
@@ -42,8 +44,10 @@ const callbackCode = ts.transpileModule(`
   globalThis.controls = { mark: markBroadcastLegacyDataPending, clear: clearBroadcastLegacyDataPending, input: markKittyTextInput, composition: markKittyCompositionPending };
 `, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 
-function setup(flags = 0, sourceFlags = 0) {
+function setup(flags = 0, sourceFlags = 0, pasteChunkDelayMs = 0) {
   const writes: string[] = [];
+  const pacedPastes: Array<{ data: string; delay: number }> = [];
+  let markNativePaste!: () => void;
   const timers = new Map<number, () => void>();
   let timerId = 0;
   let receive!: (data: string) => void;
@@ -67,12 +71,16 @@ function setup(flags = 0, sourceFlags = 0) {
       setTimeout(fn: () => void) { const id = ++timerId; timers.set(id, fn); return id; },
       clearTimeout(id: number) { timers.delete(id); },
     },
+    setTimeout,
+    clearTimeout,
     term: {
+      element: { addEventListener(_event: string, callback: () => void) { markNativePaste = callback; } },
+      paste(text: string) { receive(text.replace(/\r?\n/g, "\r")); },
       modes: { win32InputMode: false },
       onData(fn: typeof receive) { receive = fn; },
       attachCustomKeyEventHandler(fn: typeof keyboard) { keyboard = fn; },
     },
-    ctx: { terminalSettingsRef: { current: {} }, isBroadcastEnabledRef: { current: true }, onBroadcastInputRef: { current: () => undefined } },
+    ctx: { terminalSettingsRef: { current: { pasteChunkDelayMs } }, isBroadcastEnabledRef: { current: true }, onBroadcastInputRef: { current: () => undefined } },
     imeTextInputDeferredKey: null, imeTextInputDeferredKittyEvent: null,
     shouldBlockKeyPressForImeTextInput, shouldCommitDeferredImeTextInput, shouldMarkKittyTextInputEvent, shouldEncodeKittyCompositionText, encodeKittyCompositionText,
     kittyKeyboardMode: sourceMode, shouldSplitImeTextInputForWire: () => false,
@@ -82,10 +90,13 @@ function setup(flags = 0, sourceFlags = 0) {
     sanitizeTerminalInput,
     shouldSplitRawPasteInputForWire: () => false,
     raw: (data: string) => writes.push(data),
+    onPacedPaste: (data: string, delay: number) => pacedPastes.push({ data, delay }),
   };
   runInNewContext(callbackCode, context);
   return {
-    writes, receive: (data: string) => receive(data), controls: context.controls,
+    writes, pacedPastes, receive: (data: string) => receive(data), controls: context.controls,
+    paste: (text: string) => context.term.paste(text),
+    nativePaste: (data: string) => { markNativePaste(); receive(data); },
     keypress: (key: string, code: string) => keyboard({ type: "keypress", key, code }),
     press(key: string, code: string) {
       normalized({ kind: "key", event: { type: "keydown", key, code }, fallbackToLegacy: true });
@@ -178,4 +189,22 @@ test("keyless insertText is still broadcast as actual text", () => {
   runtime.controls.input({ data: "中文", inputType: "insertText" });
   runtime.receive("中文");
   assert.equal(runtime.writes.join(""), "中文");
+});
+
+test("chunk pacing is attached to native and programmatic pastes only when enabled", () => {
+  const enabled = setup(0, 0, 20);
+  const line = "x".repeat(40);
+  enabled.receive(line);
+  enabled.paste(line + "\nend");
+  enabled.nativePaste(line + "\rend");
+  enabled.receive(line);
+  assert.deepEqual(enabled.pacedPastes, [
+    { data: line + "\rend", delay: 20 },
+    { data: line + "\rend", delay: 20 },
+  ]);
+
+  const disabled = setup();
+  disabled.paste(line);
+  disabled.nativePaste(line);
+  assert.deepEqual(disabled.pacedPastes, []);
 });

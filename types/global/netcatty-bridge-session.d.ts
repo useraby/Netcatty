@@ -364,6 +364,7 @@ declare global {
         /** Whole character to erase on an explicitly byte-oriented serial device. */
         serialEraseChar?: string;
         lineDelayMs?: number;
+        pasteChunkDelayMs?: number;
         logRewrite?: { sentCommand: string; displayCommand: string };
       },
     ): void;
@@ -381,7 +382,7 @@ declare global {
       trace?: NetcattyTerminalInterruptTrace,
       options?: { cancelPendingWritesOnly?: boolean },
     ): void;
-    resizeSession(sessionId: string, cols: number, rows: number): void;
+    resizeSession(sessionId: string, cols: number, rows: number, pixels?: NetcattyTerminalPixelSize): void;
     /**
      * Sync Windows ConPTY after the renderer clears the xterm viewport.
      * No-op for SSH and non-ConPTY sessions.

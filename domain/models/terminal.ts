@@ -21,7 +21,13 @@ export type TerminalMouseClickBehavior = 'context-menu' | 'paste' | 'select-word
 export type RightClickBehavior = TerminalMouseClickBehavior;
 export type MiddleClickBehavior = 'context-menu' | 'paste' | 'disabled';
 export type LinkModifier = 'none' | 'ctrl' | 'alt' | 'meta';
-export type TerminalEmulationType = 'xterm-256color' | 'xterm-16color' | 'xterm';
+export const TERMINAL_EMULATION_TYPES = [
+  'xterm-256color', 'xterm-16color', 'xterm', 'vt100', 'vt220', 'ansi', 'screen-256color',
+] as const;
+export type TerminalEmulationType = typeof TERMINAL_EMULATION_TYPES[number];
+
+export const TERMINAL_PASTE_CHUNK_DELAYS_MS = [0, 10, 20, 50] as const;
+export type TerminalPasteChunkDelayMs = typeof TERMINAL_PASTE_CHUNK_DELAYS_MS[number];
 export type DynamicTabTitleMode = 'off' | 'agent' | 'all';
 /**
  * What the terminal host info bar shows as its primary title (#2708).
@@ -97,6 +103,8 @@ export interface TerminalSettings {
   minimumContrastRatio: number; // Minimum contrast ratio (1-21)
 
   // Keyboard
+  backspaceSendsCtrlH: boolean;
+  pasteChunkDelayMs: TerminalPasteChunkDelayMs;
   altAsMeta: boolean; // Use ⌥ as the Meta key
   optionArrowWordJump: boolean; // macOS: Option+←/→ send Meta-b/f for word jump
   shiftEnterNewlineEnabled: boolean; // Send configured text on Shift+Enter
@@ -438,6 +446,11 @@ export const normalizeTerminalSettings = (
   const mergedSettings = {
     ...DEFAULT_TERMINAL_SETTINGS,
     ...(settings ?? {}),
+    terminalEmulationType: TERMINAL_EMULATION_TYPES.find((type) => type === settings?.terminalEmulationType)
+      ?? DEFAULT_TERMINAL_SETTINGS.terminalEmulationType,
+    backspaceSendsCtrlH: settings?.backspaceSendsCtrlH === true,
+    pasteChunkDelayMs: TERMINAL_PASTE_CHUNK_DELAYS_MS.find((delay) => delay === settings?.pasteChunkDelayMs)
+      ?? DEFAULT_TERMINAL_SETTINGS.pasteChunkDelayMs,
     middleClickBehavior,
     middleClickPaste: middleClickBehavior === 'paste',
     wordSeparators,
@@ -546,6 +559,8 @@ const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   cursorBarWidth: 2,
   highlightCursorLine: false,
   minimumContrastRatio: 1,
+  backspaceSendsCtrlH: false,
+  pasteChunkDelayMs: 0,
   altAsMeta: false,
   optionArrowWordJump: false,
   shiftEnterNewlineEnabled: true,

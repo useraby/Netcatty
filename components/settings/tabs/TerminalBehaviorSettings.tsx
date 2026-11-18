@@ -1,5 +1,5 @@
 import React from "react";
-import { DEFAULT_TERMINAL_WORD_SEPARATORS } from "../../../domain/models";
+import { DEFAULT_TERMINAL_WORD_SEPARATORS, TERMINAL_PASTE_CHUNK_DELAYS_MS } from "../../../domain/models";
 import type { DisconnectedNoticeMode, DynamicTabTitleMode, LinkModifier, MiddleClickBehavior, OscNotificationMode, RightClickBehavior, TerminalSettings, TerminalTabDoubleClickBehavior } from "../../../domain/models";
 import { Input } from "../../ui/input";
 import { Label } from "../../ui/label";
@@ -158,6 +158,35 @@ export const TerminalBehaviorSettings: React.FC<TerminalBehaviorSettingsProps> =
             placeholder={`${DEFAULT_TERMINAL_WORD_SEPARATORS}=,:`}
             className="w-56 font-mono"
             spellCheck={false}
+          />
+        </SettingRow>
+
+        <SettingRow
+          anchorId="terminal-backspace-ctrl-h"
+          label={t("settings.terminal.behavior.backspaceSendsCtrlH")}
+        >
+          <Toggle
+            checked={terminalSettings.backspaceSendsCtrlH}
+            onChange={(value) => updateTerminalSetting("backspaceSendsCtrlH", value)}
+          />
+        </SettingRow>
+
+        <SettingRow
+          anchorId="terminal-paste-chunk-delay"
+          label={t("settings.terminal.behavior.pasteChunkDelay")}
+          description={t("settings.terminal.behavior.pasteChunkDelay.desc")}
+        >
+          <Select
+            value={String(terminalSettings.pasteChunkDelayMs)}
+            options={TERMINAL_PASTE_CHUNK_DELAYS_MS.map((delay) => ({
+              value: String(delay),
+              label: delay === 0 ? t("settings.terminal.behavior.pasteChunkDelay.default") : `${delay} ms`,
+            }))}
+            onChange={(value) => {
+              const delay = TERMINAL_PASTE_CHUNK_DELAYS_MS.find((option) => String(option) === value);
+              if (delay !== undefined) updateTerminalSetting("pasteChunkDelayMs", delay);
+            }}
+            className="w-32"
           />
         </SettingRow>
 

@@ -192,7 +192,7 @@ import {
 } from "./terminalInterruptDiagnostics";
 import { clearTerminalInputStateForInterrupt } from "./terminalInterruptInputState";
 import { getFlowControllerForTerm } from "./terminalSessionAttachment";
-import { createTerminalResizeScheduler } from "./terminalResizeScheduler";
+import { createTerminalResizeScheduler, getTerminalPixelSize } from "./terminalResizeScheduler";
 import { createTerminalLinkHandler } from "./terminalLinkHandler";
 import { writeLocalTerminalDataInOrder } from "./terminalUnfocusedRepaint";
 import {
@@ -243,7 +243,7 @@ type TerminalBackendApi = {
     sessionId: string,
     signal?: "interrupt" | "terminate" | "kill" | "eof" | "break",
   ) => Promise<unknown>;
-  resizeSession: (sessionId: string, cols: number, rows: number) => void;
+  resizeSession: NetcattyBridge["resizeSession"];
   clearSessionPtyBuffer?: (sessionId: string) => void;
   setSessionFlowPaused?: (sessionId: string, paused: boolean) => void;
 };
@@ -1301,6 +1301,15 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
     if (ctx.serialLocalEcho) writeLocalTerminalData(formatSerialLocalEcho(text));
   };
 
+  const usesSshPty = (ctx.host.protocol ?? "ssh") === "ssh"
+    && !ctx.host.moshEnabled && !ctx.host.etEnabled;
+  const mapBackspace = (data: string) => mapTerminalBackspaceInput(
+    data,
+    usesSshPty && ctx.terminalSettingsRef.current?.backspaceSendsCtrlH
+      ? "ctrl-h"
+      : ctx.host.backspaceBehavior,
+  );
+
   const handleTerminalInputData = (
     data: string,
     options?: {
@@ -1323,6 +1332,7 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
        */
       sourceSensitiveBroadcast?: boolean;
       lineDelayMs?: number;
+      pasteChunkDelayMs?: number;
       pasteRequestId?: string;
       /**
        * Send plain text as one write per character. Strict bastion prompts
@@ -1526,7 +1536,7 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
         // Character mode sends input immediately. Byte-oriented devices opt in
         // to expansion in the backend, using the session's actual wire encoder.
         const isBackspace = dataToWrite === "\x7f" || dataToWrite === "\b";
-        const outData = mapTerminalBackspaceInput(dataToWrite, ctx.host.backspaceBehavior);
+        const outData = mapBackspace(dataToWrite);
         let serialEraseChar: string | undefined;
         let backspaceCells = 1;
 
@@ -1554,6 +1564,7 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
           ctx.terminalBackend.writeToSession(id, chunk, {
             sensitive,
             serialEraseChar,
+            ...(options?.pasteChunkDelayMs ? { pasteChunkDelayMs: options.pasteChunkDelayMs } : {}),
             ...(options?.lineDelayMs ? {
               automated: false,
               lineDelayMs: options.lineDelayMs,
@@ -3037,7 +3048,40 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
     }
   });
 
+  // xterm emits the processed paste synchronously, including any bracketed
+  // paste markers. Keep that one payload intact until it reaches the writer.
+  const originalPaste = term.paste;
+  let programmaticPaste = false;
+  term.paste = (text) => {
+    const previous = programmaticPaste;
+    programmaticPaste = true;
+    try {
+      originalPaste.call(term, text);
+    } finally {
+      programmaticPaste = previous;
+    }
+  };
+  let nativePastePending = false;
+  let nativePasteResetTimer: ReturnType<typeof setTimeout> | undefined;
+  const markNativePaste = () => {
+    nativePastePending = true;
+    clearTimeout(nativePasteResetTimer);
+    // The browser can run microtasks between capture and xterm's paste listener.
+    nativePasteResetTimer = setTimeout(() => { nativePastePending = false; }, 0);
+  };
+  term.element?.addEventListener("paste", markNativePaste, true);
+
   term.onData((data) => {
+    const isPaste = programmaticPaste || nativePastePending;
+    nativePastePending = false;
+    const pasteChunkDelayMs = ctx.terminalSettingsRef.current?.pasteChunkDelayMs;
+    if (usesSshPty && isPaste && pasteChunkDelayMs) {
+      const sanitized = sanitizeTerminalInput(data);
+      if (!shouldSplitRawPasteInputForWire(sanitized)) {
+        handleTerminalInputData(sanitized, { pasteChunkDelayMs });
+        return;
+      }
+    }
     const win32Input = win32InputModePendingEvent;
     if (
       win32Input &&
@@ -3173,7 +3217,7 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
       : undefined,
     writeDisposed: (id, data, writeOptions) => ctx.terminalBackend.writeToSession(
       id,
-      mapTerminalBackspaceInput(data, ctx.host.backspaceBehavior),
+      mapBackspace(data),
       {
         sensitive: ctx.passwordPromptActiveRef?.current === true
           || writeOptions?.sensitive === true,
@@ -3399,14 +3443,32 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
     ctx.onBell?.();
   });
 
+  let notifiedCols = term.cols;
+  let notifiedRows = term.rows;
   const resizeDebounceMs = XTERM_PERFORMANCE_CONFIG.resize.debounceMs;
   const resizeScheduler = createTerminalResizeScheduler(
     resizeDebounceMs,
     ({ sessionId, cols, rows }) => {
-      ctx.terminalBackend.resizeSession(sessionId, cols, rows);
-      ctx.onResize?.(cols, rows);
+      if (ctx.sessionRef.current !== sessionId || cols !== term.cols || rows !== term.rows) return;
+      ctx.terminalBackend.resizeSession(sessionId, cols, rows, getTerminalPixelSize(term));
+      if (cols !== notifiedCols || rows !== notifiedRows) {
+        notifiedCols = cols;
+        notifiedRows = rows;
+        ctx.onResize?.(cols, rows);
+      }
     },
   );
+  // A font or renderer change can alter pixel dimensions with the same grid.
+  const screen = usesSshPty ? term.element?.querySelector(".xterm-screen") : undefined;
+  const screenResizeObserver = screen && typeof ResizeObserver !== "undefined"
+    ? new ResizeObserver(() => {
+        const id = ctx.sessionRef.current;
+        if (id && getTerminalPixelSize(term)) {
+          resizeScheduler.schedule({ sessionId: id, cols: term.cols, rows: term.rows });
+        }
+      })
+    : undefined;
+  if (screen && screenResizeObserver) screenResizeObserver.observe(screen);
   term.onResize(({ cols, rows }) => {
     // An idle alternate-screen application may emit nothing after resizing.
     // Update history now, using xterm's cursor after any normal-buffer reflow.
@@ -3492,6 +3554,10 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
     invalidatePendingPasteDraft,
     dispose: () => {
       runtimeDisposed = true;
+      term.paste = originalPaste;
+      clearTimeout(nativePasteResetTimer);
+      term.element?.removeEventListener("paste", markNativePaste, true);
+      screenResizeObserver?.disconnect();
       disposeLinePasteHandler?.();
       disposePasteWriteReceipts?.();
       pendingLinePastes.clear();

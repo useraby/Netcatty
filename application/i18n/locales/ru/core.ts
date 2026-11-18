@@ -662,6 +662,10 @@ export const ruCoreMessages: Messages = {
   'settings.terminal.behavior.wordSeparators': 'Разделители слов',
   'settings.terminal.behavior.wordSeparators.desc':
     'Символы, которые считаются границами слова при выделении двойным щелчком. Пробел тоже учитывается; добавьте =, запятую или : для строк вроде uid=name.',
+  'settings.terminal.behavior.backspaceSendsCtrlH': 'Backspace отправляет Ctrl+H (для старых устройств)',
+  'settings.terminal.behavior.pasteChunkDelay': 'Задержка между блоками вставки',
+  'settings.terminal.behavior.pasteChunkDelay.desc': 'Пауза между блоками при отправке длинного текста по SSH.',
+  'settings.terminal.behavior.pasteChunkDelay.default': '0 мс (по умолчанию)',
   'settings.terminal.behavior.bracketedPaste': 'Режим bracketed paste',
   'settings.terminal.behavior.bracketedPaste.desc':
     'Оборачивать вставляемый текст escape-последовательностями, чтобы оболочка отличала вставку от обычного ввода. Отключите, если видите артефакты вида ^[[200~.',

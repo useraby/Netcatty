@@ -344,6 +344,10 @@ export const zhCNTerminalMessages: Messages = {
   'settings.terminal.behavior.wordSeparators': '单词分隔符',
   'settings.terminal.behavior.wordSeparators.desc':
     '双击选择文本时作为边界的字符。空格也算；可添加 =、逗号或 :，方便选择 uid=name 里的部分内容。',
+  'settings.terminal.behavior.backspaceSendsCtrlH': '退格键发送 Ctrl+H (兼容旧设备)',
+  'settings.terminal.behavior.pasteChunkDelay': '粘贴发送分块延迟',
+  'settings.terminal.behavior.pasteChunkDelay.desc': '通过 SSH 粘贴长文本时，每发送一块后等待的时间。',
+  'settings.terminal.behavior.pasteChunkDelay.default': '0 ms (默认)',
   'settings.terminal.behavior.bracketedPaste': '括号粘贴模式',
   'settings.terminal.behavior.bracketedPaste.desc':
     '粘贴文本时使用转义序列包裹，以便终端区分粘贴和键入。如果出现 ^[[200~ 字样请关闭此选项。',

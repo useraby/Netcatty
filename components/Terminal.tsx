@@ -261,6 +261,7 @@ import {
   wakeTerminalFromHibernate,
   type TerminalRuntimeRefs,
 } from "./terminal/terminalRuntimeMount";
+import { getTerminalPixelSize } from "./terminal/runtime/terminalResizeScheduler";
 import type { CreateXTermRuntimeContext } from "./terminal/runtime/createXTermRuntime";
 import { TerminalView } from "./terminal/TerminalView";
 import {
@@ -4692,7 +4693,11 @@ const TerminalComponent: React.FC<TerminalProps> = ({
         sessionStartersRef.current?.reattachSession(term);
       },
       safeFit: (...args) => safeFitRef.current(...args),
-      resizeSession,
+      resizeSession: () => {
+        const id = sessionRef.current;
+        const term = termRef.current;
+        if (id && term) resizeSession(id, term.cols, term.rows, getTerminalPixelSize(term));
+      },
       forceSyncRenderAfterResize,
       lastFittedSizeRef,
       isBootActiveRef,

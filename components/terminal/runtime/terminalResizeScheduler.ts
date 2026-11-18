@@ -1,3 +1,11 @@
+import type { Terminal as XTerm } from "@xterm/xterm";
+
+export function getTerminalPixelSize(term: Pick<XTerm, "element">): NetcattyTerminalPixelSize | undefined {
+  const screen = term.element?.querySelector<HTMLElement>(".xterm-screen");
+  if (!screen?.clientWidth || !screen.clientHeight) return undefined;
+  return { width: screen.clientWidth, height: screen.clientHeight };
+}
+
 export type TerminalResizeRequest = Readonly<{
   sessionId: string;
   cols: number;
